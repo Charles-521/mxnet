@@ -266,11 +266,13 @@ class Module(BaseModule):
         input_types = dict((x.name, x.dtype)
                            if isinstance(x, DataDesc) else (x[0], mx_real_t)
                            for x in data_shapes)
-        for item in label_shapes:
-            if isinstance(item, DataDesc):
-                input_types[item.name] = item.dtype
-            else:
-                input_types[item[0]] = mx_real_t
+
+        if label_shapes is not None:
+            for item in label_shapes:
+                if isinstance(item, DataDesc):
+                    input_types[item.name] = item.dtype
+                else:
+                    input_types[item[0]] = mx_real_t
 
         self._exec_group = DataParallelExecutorGroup(self._symbol, self._context,
                                                      self._work_load_list, data_shapes,
