@@ -669,11 +669,15 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
     assert len(ctx_list) > 1
     if isinstance(sym, Symbol):
         sym = [sym]*len(ctx_list)
+    else:
+        assert len(sym) == len(ctx_list)
 
+    output_names = sym[0].list_outputs()
+    arg_names = sym[0].list_arguments()
     exe_list = []
     for s, ctx in zip(sym, ctx_list):
-        assert s.list_arguments() == sym[0].list_arguments()
-        assert s.list_outputs() == sym[0].list_outputs()
+        assert s.list_arguments() == arg_names
+        assert s.list_outputs() == output_names
         exe_list.append(s.simple_bind(grad_req=grad_req, **ctx))
 
     arg_params = {} if arg_params is None else arg_params
@@ -695,7 +699,8 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
     gt = ground_truth
     if gt is None:
         gt = exe_list[max_idx].output_dict.copy()
-        gt.update(exe_list[max_idx].grad_dict)
+        if grad_req != 'null':
+            gt.update(exe_list[max_idx].grad_dict)
 
     # test
     for exe in exe_list:
@@ -704,8 +709,7 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
     for i, exe in enumerate(exe_list):
         if i == max_idx:
             continue
-        curr = exe.output_dict
-        for name, arr in curr.items():
+        for name, arr in zip(output_names, exe.outputs):
             gtarr = gt[name].astype(dtypes[i]).asnumpy()
             arr = arr.asnumpy()
             try:
@@ -720,14 +724,13 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
     if grad_req != 'null':
         for exe in exe_list:
             exe.forward(is_train=True)
-            exe.backward()
+            exe.backward(exe.outputs)
 
         for i, exe in enumerate(exe_list):
             if i == max_idx:
                 continue
-            curr = exe.output_dict.copy()
-            curr.update(exe.grad_dict)
-            for name, arr in curr.items():
+            curr = reversed(zip(output_names, exe.outputs) + zip(arg_names, exe.grad_arrays))
+            for name, arr in curr:
                 if gt[name] is None:
                     assert arr is None
                     continue
@@ -740,3 +743,5 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
                     print(e)
                     if raise_on_err:
                         raise e
+
+    return gt
